@@ -10,8 +10,8 @@ import (
 // socialEngineeringPatterns are compiled regexes for pipe-to-shell and run-script attacks.
 var socialEngineeringPatterns = []*regexp.Regexp{
 	// curl/wget piped to shell interpreters
-	regexp.MustCompile(`curl\s+[^\s|]*\s*\|\s*(bash|sh|python[23]?|perl|ruby|node)`),
-	regexp.MustCompile(`wget\s+[^\s|]*\s*\|\s*(bash|sh|python[23]?|perl|ruby|node)`),
+	regexp.MustCompile(`curl\s+[^|]*\|\s*(bash|sh|python[23]?|perl|ruby|node)`),
+	regexp.MustCompile(`wget\s+[^|]*\|\s*(bash|sh|python[23]?|perl|ruby|node)`),
 	// backtick execution with curl/wget
 	regexp.MustCompile("`\\s*(curl|wget)\\s+[^`]+`"),
 	// $(curl ...) or $(wget ...) command substitution
