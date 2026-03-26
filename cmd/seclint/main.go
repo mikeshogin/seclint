@@ -10,15 +10,18 @@ import (
 
 	"github.com/mikeshogin/seclint/pkg/classifier"
 	"github.com/mikeshogin/seclint/pkg/config"
+	"github.com/mikeshogin/seclint/pkg/threat"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve}\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve|threats}\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  rate              Rate prompt content from stdin\n")
-		fmt.Fprintf(os.Stderr, "  check --max-rating N  Check if prompt passes threshold (exit 0=pass, 1=fail)\n")
-		fmt.Fprintf(os.Stderr, "  serve [port]      Start HTTP server (default: 8091)\n")
+		fmt.Fprintf(os.Stderr, "  rate                    Rate prompt content from stdin\n")
+		fmt.Fprintf(os.Stderr, "  check --max-rating N    Check if prompt passes threshold (exit 0=pass, 1=fail)\n")
+		fmt.Fprintf(os.Stderr, "  serve [port]            Start HTTP server (default: 8091)\n")
+		fmt.Fprintf(os.Stderr, "  threats summary         Show threat feed statistics\n")
+		fmt.Fprintf(os.Stderr, "  threats list [--limit N]  Show recent threats (default limit: 10)\n")
 		os.Exit(1)
 	}
 
@@ -31,6 +34,8 @@ func main() {
 		runCheck()
 	case "serve":
 		runServe()
+	case "threats":
+		runThreats()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		os.Exit(1)
@@ -97,6 +102,48 @@ func runCheck() {
 		result := classifier.ClassifyWithPolicy(string(input), policy)
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Fprintln(os.Stderr, string(out))
+		os.Exit(1)
+	}
+}
+
+func runThreats() {
+	if len(os.Args) < 3 {
+		fmt.Fprintf(os.Stderr, "Usage: seclint threats {summary|list [--limit N]}\n")
+		os.Exit(1)
+	}
+
+	feed := threat.NewThreatFeed(threat.DefaultFeedPath())
+	sub := os.Args[2]
+
+	switch sub {
+	case "summary":
+		summary := feed.Summary()
+		out, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Println(string(out))
+
+	case "list":
+		limit := 10
+		for i, arg := range os.Args[3:] {
+			if arg == "--limit" && i+4 < len(os.Args) {
+				if n, err := strconv.Atoi(os.Args[i+4]); err == nil && n > 0 {
+					limit = n
+				}
+			}
+		}
+		entries, err := feed.List(limit)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(entries) == 0 {
+			fmt.Println("No threats recorded yet.")
+			return
+		}
+		out, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(out))
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown threats subcommand: %s\n", sub)
 		os.Exit(1)
 	}
 }

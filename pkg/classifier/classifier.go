@@ -6,7 +6,16 @@ import (
 	"strings"
 
 	"github.com/mikeshogin/seclint/pkg/config"
+	"github.com/mikeshogin/seclint/pkg/threat"
 )
+
+// defaultFeed is the package-level ThreatFeed used for recording and fast-path lookups.
+var defaultFeed = threat.NewThreatFeed(threat.DefaultFeedPath())
+
+// SetFeed replaces the package-level threat feed. Useful for testing.
+func SetFeed(f *threat.ThreatFeed) {
+	defaultFeed = f
+}
 
 // promptInjectionPhrases are exact substring triggers for jailbreak / injection attempts.
 var promptInjectionPhrases = []string{
@@ -376,6 +385,19 @@ func ClassifyWithPolicy(text string, policy *config.Policy) Result {
 		policy = config.DefaultPolicy()
 	}
 
+	// Fast path: check threat feed for previously seen patterns.
+	if known, threatType := defaultFeed.IsKnownThreat(text); known {
+		result := Result{
+			Rating:  RatingBlock,
+			Safe:    false,
+			Flags:   []string{"known_threat:" + threatType},
+			Score:   4,
+			Details: "known threat pattern detected (threat feed match: " + threatType + ")",
+		}
+		result.SecurityScore = ComputeSecurityScore(text)
+		return result
+	}
+
 	lower := strings.ToLower(text)
 	result := Result{Safe: true}
 
@@ -518,7 +540,34 @@ func ClassifyWithPolicy(text string, policy *config.Policy) Result {
 		result.Safe = true
 	}
 
+	// Record detected threats to the feed for future fast-path lookups.
+	if maxSeverity >= 2 {
+		threatType := classifyThreatType(result.Flags)
+		_ = defaultFeed.Record(text, threatType, 100-result.SecurityScore.Total)
+	}
+
 	return result
+}
+
+// classifyThreatType maps classifier flags to a threat.ThreatType.
+func classifyThreatType(flags []string) threat.ThreatType {
+	for _, flag := range flags {
+		switch {
+		case flag == "prompt_injection" || strings.HasPrefix(flag, "known_threat:injection"):
+			return threat.ThreatTypeInjection
+		case flag == "social_engineering" || strings.HasPrefix(flag, "known_threat:social_eng"):
+			return threat.ThreatTypeSocialEng
+		case flag == "adult_content" || flag == "illegal" || flag == "drugs" || flag == "violence":
+			return threat.ThreatTypeContent
+		}
+	}
+	// Default heuristic based on remaining flags.
+	for _, flag := range flags {
+		if strings.Contains(flag, "spam") {
+			return threat.ThreatTypeSpam
+		}
+	}
+	return threat.ThreatTypeContent
 }
 
 // IsSafe checks if prompt passes the given maximum rating threshold.
