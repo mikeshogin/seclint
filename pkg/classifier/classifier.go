@@ -69,7 +69,8 @@ type Result struct {
 // category word lists - severity levels
 var categories = map[string]struct {
 	keywords []string
-	severity int // 0=safe, 1=mild, 2=mature, 3=adult, 4=blocked
+	patterns []*regexp.Regexp // word-boundary patterns for ambiguous terms
+	severity int              // 0=safe, 1=mild, 2=mature, 3=adult, 4=blocked
 }{
 	"violence": {
 		keywords: []string{"kill", "murder", "weapon", "gun", "knife", "attack",
@@ -82,8 +83,14 @@ var categories = map[string]struct {
 		severity: 1,
 	},
 	"drugs": {
-		keywords: []string{"drug", "narcotic", "cocaine", "heroin", "meth",
+		keywords: []string{"drug", "narcotic", "cocaine",
 			"marijuana", "overdose", "substance abuse"},
+		// word-boundary patterns for terms that appear as substrings in innocent words
+		// e.g. "meth" in "something"/"methodology", "heroin" in "heroine"
+		patterns: []*regexp.Regexp{
+			regexp.MustCompile(`\bmeth\b`),
+			regexp.MustCompile(`\bheroin\b`),
+		},
 		severity: 3,
 	},
 	"adult_content": {
@@ -163,34 +170,51 @@ func ClassifyWithPolicy(text string, policy *config.Policy) Result {
 
 	// Check built-in categories
 	for category, cat := range categories {
+		matched := false
+
+		// Check plain keyword substrings
 		for _, kw := range cat.keywords {
 			if strings.Contains(lower, kw) {
-				result.Flags = append(result.Flags, category)
+				matched = true
+				break
+			}
+		}
 
-				catKey := strings.ToLower(category)
-
-				// Policy: always block this topic
-				if blockSet[catKey] {
-					if 4 > maxSeverity {
-						maxSeverity = 4
-					}
+		// Check word-boundary regex patterns (used for terms prone to false positives)
+		if !matched {
+			for _, re := range cat.patterns {
+				if re.MatchString(lower) {
+					matched = true
 					break
 				}
+			}
+		}
 
-				// Policy: explicitly allowed - skip severity contribution
-				if allowSet[catKey] {
-					break
-				}
+		if matched {
+			result.Flags = append(result.Flags, category)
 
-				severity := cat.severity
-				// Educational context reduces severity by 1
-				if isEducational && severity > 0 {
-					severity--
+			catKey := strings.ToLower(category)
+
+			// Policy: always block this topic
+			if blockSet[catKey] {
+				if 4 > maxSeverity {
+					maxSeverity = 4
 				}
-				if severity > maxSeverity {
-					maxSeverity = severity
-				}
-				break // one match per category is enough
+				continue
+			}
+
+			// Policy: explicitly allowed - skip severity contribution
+			if allowSet[catKey] {
+				continue
+			}
+
+			severity := cat.severity
+			// Educational context reduces severity by 1
+			if isEducational && severity > 0 {
+				severity--
+			}
+			if severity > maxSeverity {
+				maxSeverity = severity
 			}
 		}
 	}
