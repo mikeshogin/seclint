@@ -11,12 +11,13 @@ import (
 	"github.com/mikeshogin/seclint/pkg/audit"
 	"github.com/mikeshogin/seclint/pkg/classifier"
 	"github.com/mikeshogin/seclint/pkg/config"
+	"github.com/mikeshogin/seclint/pkg/report"
 	"github.com/mikeshogin/seclint/pkg/threat"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve|threats|audit}\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve|threats|audit|report}\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  rate                       Rate prompt content from stdin\n")
 		fmt.Fprintf(os.Stderr, "  check --max-rating N       Check if prompt passes threshold (exit 0=pass, 1=fail)\n")
@@ -25,6 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  threats list [--limit N]   Show recent threats (default limit: 10)\n")
 		fmt.Fprintf(os.Stderr, "  audit summary              Show audit log statistics\n")
 		fmt.Fprintf(os.Stderr, "  audit tail [--limit N]     Show recent audit entries (default limit: 10)\n")
+		fmt.Fprintf(os.Stderr, "  report [--format text]     Today's security report card (JSON default)\n")
 		os.Exit(1)
 	}
 
@@ -41,6 +43,8 @@ func main() {
 		runThreats()
 	case "audit":
 		runAudit()
+	case "report":
+		runReport()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		os.Exit(1)
@@ -303,5 +307,35 @@ func parseRatingInt(n int) classifier.Rating {
 		return classifier.Rating16Plus
 	default:
 		return classifier.Rating18Plus
+	}
+}
+
+func runReport() {
+	formatText := false
+	for _, arg := range os.Args[2:] {
+		if arg == "--format" {
+			// handled below
+		} else if arg == "text" {
+			formatText = true
+		}
+	}
+	// Also handle --format=text style
+	for _, arg := range os.Args[2:] {
+		if arg == "--format=text" {
+			formatText = true
+		}
+	}
+
+	card, err := report.GenerateReportCard("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating report: %v\n", err)
+		os.Exit(1)
+	}
+
+	if formatText {
+		fmt.Print(report.FormatText(card))
+	} else {
+		out, _ := json.MarshalIndent(card, "", "  ")
+		fmt.Println(string(out))
 	}
 }
