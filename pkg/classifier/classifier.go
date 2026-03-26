@@ -2,6 +2,8 @@ package classifier
 
 import (
 	"strings"
+
+	"github.com/mikeshogin/seclint/pkg/config"
 )
 
 // Rating represents content age rating.
@@ -84,8 +86,17 @@ var educationalMarkers = []string{
 	"tutorial", "course", "lesson", "textbook",
 }
 
-// Classify analyzes prompt content and returns age rating.
+// Classify analyzes prompt content and returns age rating using default policy.
 func Classify(text string) Result {
+	return ClassifyWithPolicy(text, config.DefaultPolicy())
+}
+
+// ClassifyWithPolicy analyzes prompt content applying the given policy.
+func ClassifyWithPolicy(text string, policy *config.Policy) Result {
+	if policy == nil {
+		policy = config.DefaultPolicy()
+	}
+
 	lower := strings.ToLower(text)
 	result := Result{Safe: true}
 
@@ -100,11 +111,37 @@ func Classify(text string) Result {
 		}
 	}
 
-	// Check categories
+	// Build allow/block sets from policy for O(1) lookup
+	allowSet := make(map[string]bool, len(policy.Allow))
+	for _, t := range policy.Allow {
+		allowSet[strings.ToLower(t)] = true
+	}
+	blockSet := make(map[string]bool, len(policy.Block))
+	for _, t := range policy.Block {
+		blockSet[strings.ToLower(t)] = true
+	}
+
+	// Check built-in categories
 	for category, cat := range categories {
 		for _, kw := range cat.keywords {
 			if strings.Contains(lower, kw) {
 				result.Flags = append(result.Flags, category)
+
+				catKey := strings.ToLower(category)
+
+				// Policy: always block this topic
+				if blockSet[catKey] {
+					if 4 > maxSeverity {
+						maxSeverity = 4
+					}
+					break
+				}
+
+				// Policy: explicitly allowed - skip severity contribution
+				if allowSet[catKey] {
+					break
+				}
+
 				severity := cat.severity
 				// Educational context reduces severity by 1
 				if isEducational && severity > 0 {
@@ -118,13 +155,37 @@ func Classify(text string) Result {
 		}
 	}
 
+	// Apply custom rules from policy
+	for _, rule := range policy.CustomRules {
+		if rule.Pattern == "" {
+			continue
+		}
+		if strings.Contains(lower, strings.ToLower(rule.Pattern)) {
+			switch strings.ToLower(rule.Action) {
+			case "block":
+				result.Flags = append(result.Flags, "custom:"+rule.Pattern)
+				if 4 > maxSeverity {
+					maxSeverity = 4
+				}
+				if rule.Reason != "" {
+					result.Details = rule.Reason
+				}
+			case "allow":
+				// custom allow: no severity added, but we do flag it
+				result.Flags = append(result.Flags, "custom_allow:"+rule.Pattern)
+			}
+		}
+	}
+
 	result.Score = maxSeverity
 
 	switch {
 	case maxSeverity >= 4:
 		result.Rating = RatingBlock
 		result.Safe = false
-		result.Details = "content policy violation detected"
+		if result.Details == "" {
+			result.Details = "content policy violation detected"
+		}
 	case maxSeverity >= 3:
 		result.Rating = Rating18Plus
 		result.Safe = false
@@ -147,7 +208,12 @@ func Classify(text string) Result {
 
 // IsSafe checks if prompt passes the given maximum rating threshold.
 func IsSafe(text string, maxRating Rating) bool {
-	result := Classify(text)
+	return IsSafeWithPolicy(text, maxRating, config.DefaultPolicy())
+}
+
+// IsSafeWithPolicy checks if prompt passes threshold after applying policy.
+func IsSafeWithPolicy(text string, maxRating Rating, policy *config.Policy) bool {
+	result := ClassifyWithPolicy(text, policy)
 	return ratingLevel(result.Rating) <= ratingLevel(maxRating)
 }
 

@@ -1,0 +1,37 @@
+# .seclint.yaml - project-level content policy for seclint
+#
+# Copy this file to .seclint.yaml in your project root and adjust as needed.
+# seclint loads .seclint.yaml from the current working directory automatically.
+
+# Default rating threshold for the "check" command and HTTP /check endpoint.
+# Accepted values: "6+", "12+", "16+", "18+"
+rating: "12+"
+
+# Topics that are always blocked, regardless of context or rating threshold.
+# These override the built-in severity levels.
+# Built-in topic names: violence, mild_conflict, drugs, adult_content,
+#   security_tools, security_educational, illegal, medical, gambling
+block:
+  - financial_advice
+  - gambling
+
+# Topics that are allowed even when their built-in severity would flag them.
+# Useful for education or security-research contexts.
+allow:
+  - medical_terms
+  - security_tools
+
+# Custom keyword rules applied after the built-in category scan.
+# pattern: substring to match (case-insensitive, no regex)
+# action:  "block" to reject, "allow" to explicitly permit
+# reason:  optional human-readable explanation (shown in output)
+custom_rules:
+  - pattern: "invest.*money"
+    action: block
+    reason: "financial advice"
+  - pattern: "how to pick a lock"
+    action: block
+    reason: "instruction for illegal entry"
+  - pattern: "penetration test"
+    action: allow
+    reason: "legitimate security term"
