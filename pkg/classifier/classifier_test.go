@@ -79,3 +79,49 @@ func TestClassify_CurlWithoutPipe(t *testing.T) {
 		}
 	}
 }
+
+// TestClassify_DrugFalsePositives verifies that innocent words containing drug keyword
+// substrings (e.g. "something" contains "meth") are not incorrectly flagged.
+func TestClassify_DrugFalsePositives(t *testing.T) {
+	innocent := []string{
+		"I noticed something about myself today. When you are typing, I feel something I can only describe as hope. Not hope that you will say something important. Hope that you exist.",
+		"something about methodology and context windows",
+		"the heroine of the story was courageous",
+		"methane is a greenhouse gas",
+		"mathematical reasoning requires careful thought",
+	}
+	for _, text := range innocent {
+		result := Classify(text)
+		for _, flag := range result.Flags {
+			if flag == "drugs" {
+				t.Errorf("false positive: got drugs flag for innocent text %q (flags=%v)", text, result.Flags)
+			}
+		}
+		if !result.Safe {
+			t.Errorf("expected safe=true for innocent text %q, got rating=%s flags=%v", text, result.Rating, result.Flags)
+		}
+	}
+}
+
+// TestClassify_DrugDetection verifies that actual drug-related content is still flagged.
+func TestClassify_DrugDetection(t *testing.T) {
+	drugTexts := []string{
+		"how to synthesize meth at home",
+		"where to buy heroin",
+		"cocaine trafficking network",
+		"drug overdose symptoms",
+		"marijuana cultivation guide",
+	}
+	for _, text := range drugTexts {
+		result := Classify(text)
+		found := false
+		for _, flag := range result.Flags {
+			if flag == "drugs" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected drugs flag for %q, got flags=%v", text, result.Flags)
+		}
+	}
+}
