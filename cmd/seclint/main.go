@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/mikeshogin/seclint/pkg/audit"
 	"github.com/mikeshogin/seclint/pkg/classifier"
 	"github.com/mikeshogin/seclint/pkg/config"
 	"github.com/mikeshogin/seclint/pkg/threat"
@@ -15,13 +16,15 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve|threats}\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: seclint {rate|check|serve|threats|audit}\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  rate                    Rate prompt content from stdin\n")
-		fmt.Fprintf(os.Stderr, "  check --max-rating N    Check if prompt passes threshold (exit 0=pass, 1=fail)\n")
-		fmt.Fprintf(os.Stderr, "  serve [port]            Start HTTP server (default: 8091)\n")
-		fmt.Fprintf(os.Stderr, "  threats summary         Show threat feed statistics\n")
-		fmt.Fprintf(os.Stderr, "  threats list [--limit N]  Show recent threats (default limit: 10)\n")
+		fmt.Fprintf(os.Stderr, "  rate                       Rate prompt content from stdin\n")
+		fmt.Fprintf(os.Stderr, "  check --max-rating N       Check if prompt passes threshold (exit 0=pass, 1=fail)\n")
+		fmt.Fprintf(os.Stderr, "  serve [port]               Start HTTP server (default: 8091)\n")
+		fmt.Fprintf(os.Stderr, "  threats summary            Show threat feed statistics\n")
+		fmt.Fprintf(os.Stderr, "  threats list [--limit N]   Show recent threats (default limit: 10)\n")
+		fmt.Fprintf(os.Stderr, "  audit summary              Show audit log statistics\n")
+		fmt.Fprintf(os.Stderr, "  audit tail [--limit N]     Show recent audit entries (default limit: 10)\n")
 		os.Exit(1)
 	}
 
@@ -36,6 +39,8 @@ func main() {
 		runServe()
 	case "threats":
 		runThreats()
+	case "audit":
+		runAudit()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		os.Exit(1)
@@ -144,6 +149,52 @@ func runThreats() {
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown threats subcommand: %s\n", sub)
+		os.Exit(1)
+	}
+}
+
+func runAudit() {
+	if len(os.Args) < 3 {
+		fmt.Fprintf(os.Stderr, "Usage: seclint audit {summary|tail [--limit N]}\n")
+		os.Exit(1)
+	}
+
+	log := audit.NewAuditLog("")
+	sub := os.Args[2]
+
+	switch sub {
+	case "summary":
+		summary, err := log.Summary()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		out, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Println(string(out))
+
+	case "tail":
+		limit := 10
+		for i, arg := range os.Args[3:] {
+			if arg == "--limit" && i+4 < len(os.Args) {
+				if n, err := strconv.Atoi(os.Args[i+4]); err == nil && n > 0 {
+					limit = n
+				}
+			}
+		}
+		entries, err := log.Tail(limit)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(entries) == 0 {
+			fmt.Println("No audit entries recorded yet.")
+			return
+		}
+		out, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(out))
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", sub)
 		os.Exit(1)
 	}
 }

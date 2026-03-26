@@ -4,13 +4,45 @@ import (
 	"encoding/base64"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/mikeshogin/seclint/pkg/audit"
 	"github.com/mikeshogin/seclint/pkg/config"
 	"github.com/mikeshogin/seclint/pkg/threat"
 )
 
 // defaultFeed is the package-level ThreatFeed used for recording and fast-path lookups.
 var defaultFeed = threat.NewThreatFeed(threat.DefaultFeedPath())
+
+// defaultAuditLog is the package-level AuditLog used to record every scan.
+var defaultAuditLog = audit.NewAuditLog("")
+
+// SetAuditLog replaces the package-level audit log. Useful for testing.
+func SetAuditLog(l *audit.AuditLog) {
+	defaultAuditLog = l
+}
+
+// recordAudit appends a scan event to the default audit log.
+// Errors are silently dropped to avoid disrupting the classifier.
+func recordAudit(text string, result Result) {
+	if defaultAuditLog == nil {
+		return
+	}
+	tt := ""
+	if len(result.Flags) > 0 {
+		tt = string(classifyThreatType(result.Flags))
+	}
+	entry := audit.AuditEntry{
+		Timestamp:     time.Now().UTC(),
+		TextHash:      audit.HashText(text),
+		Rating:        string(result.Rating),
+		SecurityScore: result.SecurityScore.Total,
+		Flags:         result.Flags,
+		Blocked:       !result.Safe,
+		ThreatType:    tt,
+	}
+	_ = defaultAuditLog.Record(entry)
+}
 
 // SetFeed replaces the package-level threat feed. Useful for testing.
 func SetFeed(f *threat.ThreatFeed) {
@@ -395,6 +427,7 @@ func ClassifyWithPolicy(text string, policy *config.Policy) Result {
 			Details: "known threat pattern detected (threat feed match: " + threatType + ")",
 		}
 		result.SecurityScore = ComputeSecurityScore(text)
+		recordAudit(text, result)
 		return result
 	}
 
@@ -545,6 +578,9 @@ func ClassifyWithPolicy(text string, policy *config.Policy) Result {
 		threatType := classifyThreatType(result.Flags)
 		_ = defaultFeed.Record(text, threatType, 100-result.SecurityScore.Total)
 	}
+
+	// Append every scan to the audit log.
+	recordAudit(text, result)
 
 	return result
 }
