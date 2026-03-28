@@ -51,16 +51,17 @@ func main() {
 	}
 }
 
-// loadPolicy reads .seclint.yaml from the working directory.
-// Falls back to DefaultPolicy if the file is absent.
+// loadPolicy reads .seclint.yaml from the working directory and merges with
+// the global policy (~/.seclint.yaml) via policy inheritance.
+// Falls back to DefaultPolicy if neither file is present or readable.
 func loadPolicy() *config.Policy {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return config.DefaultPolicy()
 	}
-	policy, err := config.LoadFromDir(cwd)
+	policy, err := config.LoadWithInheritance(cwd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not load .seclint.yaml: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: could not load policy: %v\n", err)
 		return config.DefaultPolicy()
 	}
 	return policy
